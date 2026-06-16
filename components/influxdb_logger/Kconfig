@@ -1,0 +1,30 @@
+menu "InfluxDB metrics logger"
+
+    config INFLUXDB_LOGGER_LP_BUF_SIZE
+        int "Line-protocol scratch buffer size (bytes)"
+        default 2048
+        help
+            One buffer is allocated at init for the line-protocol body of a
+            single POST. If your measurement has many fields or long keys you
+            may need to increase this.
+
+    config INFLUXDB_LOGGER_HTTP_TIMEOUT_MS
+        int "HTTP timeout (ms)"
+        default 5000
+
+    config INFLUXDB_LOGGER_TASK_STACK
+        int "Background task stack (bytes)"
+        default 6144
+
+    config INFLUXDB_LOGGER_TASK_PRIORITY
+        int "Background task priority"
+        default 3
+
+    config INFLUXDB_LOGGER_TOKEN
+        string "Bearer token (sent as Authorization: Token <value>)"
+        default ""
+        help
+            Leave empty to send no Authorization header. Used unchanged for
+            both http:// and https:// endpoints.
+
+endmenu

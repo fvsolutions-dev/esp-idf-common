@@ -1,0 +1,68 @@
+types:
+  wifi_connection_info:
+    c_typename: wifi_connection_info_t
+    # Custom string serializer: prints SSID + a MASKED password so odin-dump
+    # never leaks Wi-Fi credentials in clear. Ops symbol defined in wifi.c.
+    string_serialiser: wifi_connection_info_string_codec_ops
+    model: {}
+
+config:
+  type: group
+  local_id: 4
+  id_space_shift: 8
+  description: Wi-Fi STA configuration (applied at networking_init).
+  children:
+
+    enabled:
+      type: parameter
+      local_id: 1
+      primitive: bool
+      default: true
+      description: Bring up the Wi-Fi STA interface at boot. Master switch.
+
+    networks:
+      type: vector
+      local_id: 2
+      primitive: wifi_connection_info
+      max_elements: 8
+      default: [
+        {ssid: "VPS-Guest", password: "azerty123"},
+      ]
+      description: Known SSID/password pairs; the wifi management task scans and tries them in order of signal strength.
+
+data:
+  type: group
+  local_id: 5
+  id_space_shift: 8
+  description: Wi-Fi STA live state (read-only, written from event handlers).
+  children:
+
+    associated:
+      type: parameter
+      local_id: 1
+      primitive: bool
+      default: false
+      description: Currently associated with an AP.
+
+    ipv4:
+      type: vector
+      local_id: 2
+      primitive: char
+      default: ""
+      max_elements: 16
+      description: IPv4 dotted address; empty when not connected.
+
+    rssi_dbm:
+      type: parameter
+      local_id: 3
+      primitive: i8
+      default: 0
+      description: Signal strength of the current AP in dBm. Only meaningful when associated.
+
+    mac_address:
+      type: vector
+      local_id: 4
+      primitive: char
+      default: ""
+      max_elements: 18
+      description: STA MAC formatted XX:XX:XX:XX:XX:XX, populated once after esp_wifi_start.

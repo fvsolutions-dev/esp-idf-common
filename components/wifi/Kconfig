@@ -1,0 +1,9 @@
+menu "Wi-Fi"
+    config WIFI_ENABLE
+        bool "Enable Wi-Fi driver"
+        default y
+        help
+            Compile-time enable for the Wi-Fi STA driver. When disabled,
+            callers should skip wifi_init() to avoid linking the Wi-Fi
+            management task.
+endmenu

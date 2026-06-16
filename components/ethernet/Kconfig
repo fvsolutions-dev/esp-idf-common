@@ -1,0 +1,9 @@
+menu "Ethernet (W5500)"
+    config ETHERNET_ENABLE
+        bool "Enable Ethernet driver"
+        default y
+        help
+            Compile-time enable for the W5500-based Ethernet driver. When
+            disabled, callers should skip ethernet_init() to avoid linking
+            the W5500 driver.
+endmenu
