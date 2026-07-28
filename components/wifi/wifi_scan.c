@@ -133,7 +133,7 @@ void print_scan_candidates(const wifi_candidate_t *candidates,
         char mac_str[18];
         snprintf(mac_str, sizeof(mac_str), MACSTR,
                  MAC2STR(candidate->ap_record.bssid));
-        ESP_LOGI(TAG, "- Candidate %d: %s: %s, RSSI: %d, MAC: %s \n", i + 1,
+        ESP_LOGI(TAG, "- Candidate %d: %s: %s, RSSI: %d, MAC: %s", i + 1,
                  candidate->connection_info.ssid, candidate->connection_info.password,
                  candidate->ap_record.rssi, mac_str);
     }
