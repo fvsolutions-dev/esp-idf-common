@@ -31,6 +31,8 @@ static const char *get_disconnect_reason_string(int reason);
 static wifi_candidate_t *candidates;
 static int candidate_count;
 
+static volatile bool s_stopped;
+
 static wifi_credentials_provider_fn s_creds_provider;
 static void *s_creds_provider_ctx;
 
@@ -91,6 +93,10 @@ static void wifi_management_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "Starting wifi management task");
     while (true) {
+        if (s_stopped) {
+            ESP_LOGI(TAG, "Wi-Fi stopped — management task exiting");
+            vTaskDelete(NULL);
+        }
         if (!wifi_is_connected()) {
             if (s_creds_provider == NULL) {
                 ESP_LOGW(TAG, "No credentials provider registered; skipping scan cycle");
@@ -113,6 +119,9 @@ static void wifi_management_task(void *pvParameters)
 
 static esp_err_t wifi_connect(void)
 {
+    // Deliberately stopped: a reconnect here would only fail with NOT_STARTED.
+    if (s_stopped) return ESP_ERR_INVALID_STATE;
+
     if (candidate_count == 0) {
         ESP_LOGE(TAG, "No wifi candidates found");
         return ESP_FAIL;
@@ -156,6 +165,12 @@ static esp_err_t wifi_connect(void)
     }
 
     return ESP_OK;
+}
+
+esp_err_t wifi_stop(void)
+{
+    s_stopped = true;         // before the stop, so the handlers see it first
+    return esp_wifi_stop();
 }
 
 esp_err_t wifi_request_reconnect(void)
