@@ -116,8 +116,11 @@ static void try_send_keep_newest(eros_endpoint_t *ep, eros_package_t *pkg)
     eros_endpoint_send(ep, pkg, 0);
 }
 
-/* Insert a '\r' before every bare '\n'. *out_buf is NULL when no expansion
-   was needed; otherwise caller frees. */
+/* Insert a '\r' before every bare '\n'. The subscribers are raw byte pipes to
+   terminals (CDC's tud_cdc_write, BLE stdio notifies) with no LF→CRLF
+   translation of their own — the console UART gets that from the stdio VFS,
+   these transports only get it here, once, at the source. *out_buf is NULL
+   when no expansion was needed; otherwise caller frees. */
 static size_t crlf_expand(const uint8_t *in, size_t n, uint8_t **out_buf)
 {
     size_t expanded = n;
