@@ -10,35 +10,31 @@
 
 /* Reusable EROS log fan-out.
 
-   Owns one unbuffered "stdout source" endpoint on the caller-provided router,
-   and on demand redirects ESP_LOGx and printf/stdout into that endpoint as
-   keep-newest publishes to the configured log group. Any router endpoint
-   subscribed to that group receives a copy. No project-specific endpoint or
-   group IDs are baked in. */
+   Owns one unbuffered "stdout source" endpoint on the caller-provided router.
+   Capture is strictly additive: ESP_LOGx keeps flowing to whatever handler was
+   installed before (ESP-IDF stdio, i.e. the console UART) and a copy is
+   published keep-newest to the configured log group. The default output path
+   is never redirected — a panic or an early failure always still reaches the
+   console. Raw printf() is deliberately not captured: taking it would mean
+   redirecting stdout, which is exactly the debug-hostile move this module
+   refuses to make. Any router endpoint subscribed to the group receives the
+   copy. No project-specific endpoint or group IDs are baked in. */
 
 typedef struct {
     eros_router_t *router;        /* router this log layer attaches to */
     uint8_t stdout_endpoint_id;   /* endpoint id for the stdout source */
     uint8_t log_group_id;         /* group bit subscribers join to receive logs */
-    /* Keep ESP_LOGx going to the handler installed before capture (ESP-IDF
-       stdio, i.e. the console UART) as well as publishing it to the log group,
-       and leave stdout alone so raw printf() stays on the console.
-
-       Zero-initialising gives the historical behaviour: capture MOVES the log
-       off stdio rather than copying it. That is right when a router endpoint
-       puts the log back on the console (the UART transport), and wrong when
-       none does — there, capture silently takes the monitor away. */
-    bool replay_to_original_source;
 } eros_log_config_t;
 
 /* Create the stdout source endpoint and register it on the router. Safe to
-   call before any subscriber exists. Does NOT touch ESP_LOG or stdout yet —
+   call before any subscriber exists. Does NOT touch ESP_LOG yet —
    call eros_log_install_capture once subscribers are up. */
 esp_err_t eros_log_init(const eros_log_config_t *cfg);
 
-/* Redirect ESP_LOGx (esp_log_set_vprintf) and stdout (esp_vfs) into
-   eros_log_publish. Call AFTER subscribers (UART/CDC/HID/...) are registered
-   so the first redirected line has somewhere to land. */
+/* Tee ESP_LOGx (esp_log_set_vprintf): the displaced handler still runs, then
+   a copy goes to eros_log_publish. stdout/printf are left alone. Call AFTER
+   subscribers (UART/CDC/HID/...) are registered so the first captured line
+   has somewhere to land. */
 esp_err_t eros_log_install_capture(void);
 
 /* Publish a chunk through the log group with keep-newest semantics: if a

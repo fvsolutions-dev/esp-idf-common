@@ -3,18 +3,14 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
 
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_vfs.h"
 #include "eros.h"
 
 static const char *TAG = "eros_log";
 
 #define EROS_LOG_LINE_MAX    256
-#define EROS_LOG_VFS_PATH    "/eros_out"
 
 /* A copy, not the caller's pointer — callers build the config on the stack.
    Held whole rather than fanned out into a global per field, so adding a field
@@ -28,9 +24,6 @@ static vprintf_like_t console_vprintf;   /* the handler capture displaced */
 /* Forward declarations — definitions below the entry points. */
 static void stdout_ep_cb(eros_endpoint_t *ep, eros_package_t *pkg);
 static int  eros_log_vprintf(const char *fmt, va_list args);
-static ssize_t eros_log_vfs_write(int fd, const void *data, size_t size);
-static int  eros_log_vfs_fstat(int fd, struct stat *st);
-static const esp_vfs_t eros_vfs;
 
 esp_err_t eros_log_init(const eros_log_config_t *cfg)
 {
@@ -50,24 +43,12 @@ esp_err_t eros_log_install_capture(void)
 {
     if (!stdout_ep) return ESP_ERR_INVALID_STATE;
 
+    /* Tee, never move: the displaced handler keeps running so the console
+       path stays exactly as it was. stdout is not touched — raw printf()
+       stays console-only by design. */
     console_vprintf = esp_log_set_vprintf(eros_log_vprintf);
 
-    /* Redirecting stdout is what captures raw printf(), but it is also what
-       makes teeing impossible: the displaced handler writes to stdout, so with
-       stdout pointed at this module the tee would feed itself. When teeing,
-       leave stdout on the console and capture ESP_LOGx only. */
-    if (!config.replay_to_original_source) {
-        esp_err_t err = esp_vfs_register(EROS_LOG_VFS_PATH, &eros_vfs, NULL);
-        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-            return err;
-        }
-        freopen(EROS_LOG_VFS_PATH, "w", stdout);
-        static char stdout_linebuf[EROS_LOG_LINE_MAX];
-        setvbuf(stdout, stdout_linebuf, _IOLBF, sizeof(stdout_linebuf));
-    }
-
-    ESP_LOGI(TAG, "EROS log capture active%s",
-             config.replay_to_original_source ? " (console keeps its copy; printf not captured)" : "");
+    ESP_LOGI(TAG, "EROS log capture active (console keeps its copy; printf not captured)");
     return ESP_OK;
 }
 
@@ -175,7 +156,8 @@ static int eros_log_vprintf(const char *fmt, va_list args)
 {
     char stackbuf[EROS_LOG_LINE_MAX];
 
-    if (config.replay_to_original_source && console_vprintf) {
+    /* Console first, so a crash mid-publish still leaves the line on UART. */
+    if (console_vprintf) {
         va_list console_args;
         va_copy(console_args, args);
         console_vprintf(fmt, console_args);
@@ -208,26 +190,3 @@ static int eros_log_vprintf(const char *fmt, va_list args)
     free(heapbuf);
     return n;
 }
-
-static ssize_t eros_log_vfs_write(int fd, const void *data, size_t size)
-{
-    (void)fd;
-    if (size > 0) {
-        eros_log_publish((const uint8_t *)data, size);
-    }
-    return (ssize_t)size;
-}
-
-static int eros_log_vfs_fstat(int fd, struct stat *st)
-{
-    (void)fd;
-    memset(st, 0, sizeof(*st));
-    st->st_mode = S_IFCHR;
-    return 0;
-}
-
-static const esp_vfs_t eros_vfs = {
-    .flags = ESP_VFS_FLAG_DEFAULT,
-    .write = &eros_log_vfs_write,
-    .fstat = &eros_log_vfs_fstat,
-};
