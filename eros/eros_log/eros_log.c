@@ -49,7 +49,6 @@ esp_err_t eros_log_install_capture(void)
        stays console-only by design. */
     console_vprintf = esp_log_set_vprintf(eros_log_vprintf);
 
-    ESP_LOGI(TAG, "EROS log capture active (console keeps its copy; printf not captured)");
     return ESP_OK;
 }
 
