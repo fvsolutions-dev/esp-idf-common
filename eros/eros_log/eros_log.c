@@ -7,6 +7,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "eros.h"
+#include "eros_log_boot.h"
 
 static const char *TAG = "eros_log";
 
@@ -53,6 +54,42 @@ esp_err_t eros_log_install_capture(void)
 }
 
 eros_endpoint_t *eros_log_stdout_endpoint(void) { return stdout_ep; }
+
+esp_err_t eros_log_replay_boot_buffer(void)
+{
+    if (!stdout_ep) return ESP_ERR_INVALID_STATE;
+
+    const char  *early   = NULL;
+    const bool   armed   = eros_log_boot_armed();
+    const size_t n       = eros_log_boot_read(&early);
+    const uint32_t lost  = eros_log_boot_dropped();
+
+    if (n > 0) {
+        eros_log_publish((const uint8_t *)early, n);
+    }
+    eros_log_boot_finish();   /* stops capturing and empties the region */
+
+    /* Report every outcome, including the boring one. An empty boot log is
+       indistinguishable from a broken one otherwise, and both hooks are the
+       kind that fail by simply not being linked. */
+    if (!armed) {
+        ESP_LOGW(TAG, "boot log: region never armed — nothing captured. The "
+                      "hooks fail by not being linked: check WHOLE_ARCHIVE on "
+                      "eros_log and eros_log_boot, that a bootloader_components/ "
+                      "glue component REQUIRES eros_log_boot, and that app and "
+                      "bootloader agree on BOOTLOADER_CUSTOM_RESERVE_RTC_SIZE.");
+    } else if (n == 0) {
+        ESP_LOGW(TAG, "boot log: armed but empty — capture was installed and "
+                      "then overwritten before anything was logged");
+    } else if (lost > 0) {
+        ESP_LOGW(TAG, "boot log: %u B replayed, %u B LOST — raise "
+                      "BOOTLOADER_CUSTOM_RESERVE_RTC_SIZE",
+                 (unsigned)n, (unsigned)lost);
+    } else {
+        ESP_LOGI(TAG, "boot log: %u B from before app_main", (unsigned)n);
+    }
+    return ESP_OK;
+}
 
 /* ---------------------- supporting code below ---------------------- */
 

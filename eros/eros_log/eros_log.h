@@ -43,5 +43,14 @@ esp_err_t eros_log_install_capture(void);
    every subscriber sees well-formed lines. */
 void eros_log_publish(const uint8_t *data, size_t size);
 
+/* Hand over the RTC boot buffer (bootloader + pre-app_main log captured by
+   boot/eros_log_boot) to the log group, then release it. Call once, after
+   subscribers are up and before anything else is logged, so the stream reads
+   in boot order. Publishes the text raw rather than through ESP_LOG — it
+   already carries its own timestamps and colour codes. Logs a diagnostic for
+   every outcome, including "never armed" (the hooks fail by simply not being
+   linked). No-op-ish without CONFIG_BOOTLOADER_CUSTOM_RESERVE_RTC. */
+esp_err_t eros_log_replay_boot_buffer(void);
+
 /* The stdout source endpoint owned by this module. */
 eros_endpoint_t *eros_log_stdout_endpoint(void);
