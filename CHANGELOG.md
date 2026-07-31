@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### filestore (new)
+- New `storage/filestore` component: rotating, day-foldered, crash-safe
+  segment store over any mounted POSIX filesystem. Stable basenames (the
+  close is one atomic rename out of `wip/`), per-day `.index` files carrying
+  size/time-span/flags (no more metadata renamed into filenames, no `stat()`
+  per file to list), `nodate/` bucket while the wall clock is invalid
+  (instead of dropping data), retention GC by bytes and/or file count,
+  crash-orphan recovery with empty-orphan reaping, `fsck` for index drift.
+
 ### eros_log
 - Capture is now strictly a tee: the displaced `ESP_LOG` handler keeps running
   (console output unchanged), a copy publishes to the log group. The stdout
