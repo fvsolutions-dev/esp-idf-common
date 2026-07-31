@@ -11,22 +11,9 @@
 #include "esp_rom_sys.h"
 #include "sdkconfig.h"
 
+#include "eros_log_boot_region.h"
+
 #if CONFIG_BOOTLOADER_CUSTOM_RESERVE_RTC
-
-/* "ERL1". The reservation is outside the retain-mem CRC by default, so on a cold
-   boot custom[] holds whatever was in RTC RAM — the magic is what tells a real
-   buffer from power-on garbage. */
-#define EROS_LOG_BOOT_MAGIC 0x45524C31u
-
-typedef struct {
-    uint32_t magic;
-    uint32_t len;
-    uint32_t dropped;
-    char     text[];
-} eros_log_boot_region_t;
-
-#define EROS_LOG_BOOT_CAPACITY \
-    (CONFIG_BOOTLOADER_CUSTOM_RESERVE_RTC_SIZE - sizeof(eros_log_boot_region_t))
 
 static eros_log_boot_region_t *region(void)
 {

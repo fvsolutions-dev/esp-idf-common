@@ -1,0 +1,19 @@
+menu "EROS log"
+
+    config EROS_LOG_PANIC_CAPTURE
+        bool "Capture panic output into the RTC boot buffer"
+        depends on BOOTLOADER_CUSTOM_RESERVE_RTC
+        default y
+        help
+            Wraps the panic handler's print functions (ld --wrap) so a copy
+            of the Guru Meditation dump — headline, registers, backtrace —
+            lands in the same RTC region as the boot log and is replayed to
+            the EROS log group on the next boot. The native UART panic
+            output is untouched. Costs a few hundred bytes of IRAM for the
+            wrappers.
+
+            The region is CONFIG_BOOTLOADER_CUSTOM_RESERVE_RTC_SIZE bytes;
+            a full dump plus the next boot's log can exceed it, in which
+            case the tail is dropped (counted, reported at replay).
+
+endmenu
