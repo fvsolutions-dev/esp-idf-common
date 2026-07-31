@@ -60,8 +60,8 @@ esp_err_t wifi_init(const wifi_module_config_t *cfg)
         ESP_LOGE(TAG, "Failed to set wifi mode");
         return ESP_FAIL;
     }
-
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    
+    ESP_ERROR_CHECK(esp_wifi_set_ps(cfg ? cfg->power_save : WIFI_PS_NONE));
 
     if (esp_wifi_start() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start wifi");

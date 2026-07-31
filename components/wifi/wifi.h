@@ -1,4 +1,6 @@
 #pragma once
+
+#include "esp_wifi.h"
 #include <stddef.h>
 #include "esp_err.h"
 #include "extensions/extensions.h"  // ODIN_string_serialisation_extension_ops_t
@@ -22,6 +24,7 @@ extern ODIN_string_serialisation_extension_ops_t wifi_connection_info_string_cod
 
 typedef struct {
     const char *hostname;
+    wifi_ps_type_t power_save;
 } wifi_module_config_t;
 
 typedef void (*wifi_credentials_provider_fn)(
