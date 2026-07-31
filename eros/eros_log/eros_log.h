@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -19,6 +20,15 @@ typedef struct {
     eros_router_t *router;        /* router this log layer attaches to */
     uint8_t stdout_endpoint_id;   /* endpoint id for the stdout source */
     uint8_t log_group_id;         /* group bit subscribers join to receive logs */
+    /* Keep ESP_LOGx going to the handler installed before capture (ESP-IDF
+       stdio, i.e. the console UART) as well as publishing it to the log group,
+       and leave stdout alone so raw printf() stays on the console.
+
+       Zero-initialising gives the historical behaviour: capture MOVES the log
+       off stdio rather than copying it. That is right when a router endpoint
+       puts the log back on the console (the UART transport), and wrong when
+       none does — there, capture silently takes the monitor away. */
+    bool replay_to_original_source;
 } eros_log_config_t;
 
 /* Create the stdout source endpoint and register it on the router. Safe to

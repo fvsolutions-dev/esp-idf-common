@@ -16,9 +16,14 @@ static const char *TAG = "eros_log";
 #define EROS_LOG_LINE_MAX    256
 #define EROS_LOG_VFS_PATH    "/eros_out"
 
-static eros_router_t *router;
+/* A copy, not the caller's pointer — callers build the config on the stack.
+   Held whole rather than fanned out into a global per field, so adding a field
+   doesn't mean adding a global and remembering to copy it. */
+static eros_log_config_t config;
+
+/* Runtime state, not configuration. */
 static eros_endpoint_t *stdout_ep;
-static uint8_t log_group;
+static vprintf_like_t console_vprintf;   /* the handler capture displaced */
 
 /* Forward declarations — definitions below the entry points. */
 static void stdout_ep_cb(eros_endpoint_t *ep, eros_package_t *pkg);
@@ -32,12 +37,12 @@ esp_err_t eros_log_init(const eros_log_config_t *cfg)
     if (!cfg || !cfg->router) return ESP_ERR_INVALID_ARG;
     if (stdout_ep) return ESP_ERR_INVALID_STATE;
 
-    router = cfg->router;
-    log_group = cfg->log_group_id;
+    config = *cfg;
 
-    stdout_ep = eros_unbuffered_endpoint_new(cfg->stdout_endpoint_id, router, stdout_ep_cb);
+    stdout_ep = eros_unbuffered_endpoint_new(config.stdout_endpoint_id, config.router,
+                                             stdout_ep_cb);
     if (!stdout_ep) return ESP_ERR_NO_MEM;
-    eros_router_register_endpoint(router, stdout_ep);
+    eros_router_register_endpoint(config.router, stdout_ep);
     return ESP_OK;
 }
 
@@ -45,17 +50,24 @@ esp_err_t eros_log_install_capture(void)
 {
     if (!stdout_ep) return ESP_ERR_INVALID_STATE;
 
-    esp_log_set_vprintf(eros_log_vprintf);
+    console_vprintf = esp_log_set_vprintf(eros_log_vprintf);
 
-    esp_err_t err = esp_vfs_register(EROS_LOG_VFS_PATH, &eros_vfs, NULL);
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        return err;
+    /* Redirecting stdout is what captures raw printf(), but it is also what
+       makes teeing impossible: the displaced handler writes to stdout, so with
+       stdout pointed at this module the tee would feed itself. When teeing,
+       leave stdout on the console and capture ESP_LOGx only. */
+    if (!config.replay_to_original_source) {
+        esp_err_t err = esp_vfs_register(EROS_LOG_VFS_PATH, &eros_vfs, NULL);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            return err;
+        }
+        freopen(EROS_LOG_VFS_PATH, "w", stdout);
+        static char stdout_linebuf[EROS_LOG_LINE_MAX];
+        setvbuf(stdout, stdout_linebuf, _IOLBF, sizeof(stdout_linebuf));
     }
-    freopen(EROS_LOG_VFS_PATH, "w", stdout);
-    static char stdout_linebuf[EROS_LOG_LINE_MAX];
-    setvbuf(stdout, stdout_linebuf, _IOLBF, sizeof(stdout_linebuf));
 
-    ESP_LOGI(TAG, "EROS log capture active");
+    ESP_LOGI(TAG, "EROS log capture active%s",
+             config.replay_to_original_source ? " (console keeps its copy; printf not captured)" : "");
     return ESP_OK;
 }
 
@@ -123,7 +135,7 @@ static __thread int publishing_depth;
 
 void eros_log_publish(const uint8_t *data, size_t size)
 {
-    if (!router || !stdout_ep || size == 0) {
+    if (!config.router || !stdout_ep || size == 0) {
         return;
     }
     if (publishing_depth) {
@@ -143,11 +155,11 @@ void eros_log_publish(const uint8_t *data, size_t size)
     }
     pkg->source = stdout_ep->id;
     pkg->type = EROS_PACKAGE_TYPE_GROUP;
-    pkg->target.group = log_group;
+    pkg->target.group = config.log_group_id;
 
-    const uint32_t mask = 1u << log_group;
-    for (uint8_t i = 0; i < router->endpoint_count; i++) {
-        eros_endpoint_t *ep = router->endpoints[i];
+    const uint32_t mask = 1u << config.log_group_id;
+    for (uint8_t i = 0; i < config.router->endpoint_count; i++) {
+        eros_endpoint_t *ep = config.router->endpoints[i];
         if (!ep) continue;
         if (ep->subscribed_group_bitmap & mask) {
             try_send_keep_newest(ep, pkg);
@@ -162,6 +174,13 @@ void eros_log_publish(const uint8_t *data, size_t size)
 static int eros_log_vprintf(const char *fmt, va_list args)
 {
     char stackbuf[EROS_LOG_LINE_MAX];
+
+    if (config.replay_to_original_source && console_vprintf) {
+        va_list console_args;
+        va_copy(console_args, args);
+        console_vprintf(fmt, console_args);
+        va_end(console_args);
+    }
 
     va_list args_copy;
     va_copy(args_copy, args);
