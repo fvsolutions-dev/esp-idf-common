@@ -102,11 +102,14 @@ static int64_t utc_epoch(int y, int mo, int d, int h, int mi, int s)
     return days * 86400 + h * 3600 + mi * 60 + s;
 }
 
+/* Device-LOCAL time (the app sets TZ; unset TZ degrades to UTC): day folders
+   and filenames are for humans pulling the drive, and humans live in local
+   time. Epochs in the index and in row data stay UTC. */
 static void day_of_epoch(int64_t epoch, char *buf, size_t cap)
 {
     time_t t = (time_t)epoch;
     struct tm tmv;
-    gmtime_r(&t, &tmv);
+    localtime_r(&t, &tmv);
     snprintf(buf, cap, "%04d-%02d-%02d",
              tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
 }
@@ -138,23 +141,25 @@ static int day_cmp(const char *a, const char *b)
     return strcmp(a, b);
 }
 
-/* Segment basename. Dated: <prefix>-<seq>_<YYYY-MM-DD>_<HH-MM-SS>Z.<ext>
-   No clock yet:          <prefix>-<seq>_boot<id>_<uptime>s.<ext> */
+/* Segment basename. Dated: <prefix>-<seq>_<YYYY-MM-DD>_<HH-MM-SS>.<ext> in
+   device-LOCAL time (a trailing 'Z' marks legacy UTC names; recovery parses
+   both). No clock yet: <prefix>-<seq>_boot<id>.<ext>
+   (seq alone is unique; boot id is context. Deliberately NO uptime suffix —
+   "_0s" read like the duration marker of the predecessor's crash files.) */
 static void seg_name(const filestore_t *fs, char *out, size_t cap,
                      uint32_t seq, int64_t epoch_or_0)
 {
     if (epoch_or_0 > 0) {
         time_t t = (time_t)epoch_or_0;
         struct tm tmv;
-        gmtime_r(&t, &tmv);
-        snprintf(out, cap, "%s-%06u_%04d-%02d-%02d_%02d-%02d-%02dZ.%s",
+        localtime_r(&t, &tmv);
+        snprintf(out, cap, "%s-%06u_%04d-%02d-%02d_%02d-%02d-%02d.%s",
                  fs->prefix, (unsigned)seq,
                  tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
                  tmv.tm_hour, tmv.tm_min, tmv.tm_sec, fs->ext);
     } else {
-        snprintf(out, cap, "%s-%06u_boot%u_%llus.%s",
-                 fs->prefix, (unsigned)seq, (unsigned)fs->boot_id,
-                 (unsigned long long)(esp_timer_get_time() / 1000000), fs->ext);
+        snprintf(out, cap, "%s-%06u_boot%u.%s",
+                 fs->prefix, (unsigned)seq, (unsigned)fs->boot_id, fs->ext);
     }
 }
 
@@ -176,14 +181,24 @@ static void day_of_name(const char *name, char *out, size_t cap)
     str_copy(out, cap, NODATE_DIR);
 }
 
-/* Start epoch back out of a dated basename (0 for nodate names). */
+/* Start epoch back out of a dated basename (0 for nodate names). Names are
+   local time; a trailing 'Z' after the seconds marks a legacy UTC name. */
 static int64_t start_of_name(const char *name)
 {
     const char *p = strchr(name, '_');
     int y, mo, d, h, mi, s;
-    if (p && sscanf(p + 1, "%4d-%2d-%2d_%2d-%2d-%2d", &y, &mo, &d, &h, &mi, &s) == 6)
-        return utc_epoch(y, mo, d, h, mi, s);
-    return 0;
+    int n = 0;
+    if (!p || sscanf(p + 1, "%4d-%2d-%2d_%2d-%2d-%2d%n",
+                     &y, &mo, &d, &h, &mi, &s, &n) != 6)
+        return 0;
+    if (p[1 + n] == 'Z') return utc_epoch(y, mo, d, h, mi, s);
+    struct tm tmv = {
+        .tm_year = y - 1900, .tm_mon = mo - 1, .tm_mday = d,
+        .tm_hour = h, .tm_min = mi, .tm_sec = s,
+        .tm_isdst = -1,   /* let mktime resolve DST for the local zone */
+    };
+    time_t t = mktime(&tmv);
+    return (t == (time_t)-1) ? 0 : (int64_t)t;
 }
 
 /* Sequence number out of a basename ("<prefix>-<seq>_..."). */

@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### wifi
+- Scan waits on WIFI_EVENT_SCAN_DONE with its own 30 s bound instead of the
+  blocking `esp_wifi_scan_start` wait, whose driver-estimated budget a scan
+  under BLE coexistence overruns (the scan then completed after the API had
+  already returned ESP_ERR_WIFI_TIMEOUT, results discarded). The SCAN_DONE
+  handler is registered once (per-call register/unregister raced overlapping
+  scans), and the custom 250/800 ms active dwell is gone — the driver refuses
+  non-default scan times when Bluetooth is enabled, and association measured
+  ~2x faster with defaults.
+- New `wifi_resume()`: undo `wifi_stop()` (restart driver + management task);
+  backs the console `wifi on` command.
+- The disconnect handler honors `s_stopped`: a deliberate `wifi_stop()` no
+  longer triggers a reconnect attempt whose refusal was logged as the
+  (false) error "All candidates exhausted. No Wi-Fi connection possible."
+
 ### filestore (new)
 - New `storage/filestore` component: rotating, day-foldered, crash-safe
   segment store over any mounted POSIX filesystem. Stable basenames (the

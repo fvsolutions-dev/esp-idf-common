@@ -7,7 +7,7 @@ layout, retention, crash recovery and a per-day index that makes listings
 cheap enough for a USB-MSC view.
 
 ```
-<base>/wip/data-000424_2026-07-31_09-15-00Z.csv    <- being written
+<base>/wip/data-000424_2026-07-31_09-15-00.csv     <- being written (local time)
 <base>/2026-07-31/<same basename>                  <- closed (one atomic rename)
 <base>/2026-07-31/.index                           <- name/size/start/end/flags per file
 <base>/nodate/...                                  <- closed before the clock was valid
@@ -22,7 +22,7 @@ Design points (the full contract is documented in `include/filestore.h`):
 - **Crash recovery is "move whatever is left in `wip/`"**, indexed with flag
   `R`. Data is intact up to the last fsync; nothing guesses at durations.
 - **No date, no drops.** With an invalid wall clock, segments are named by
-  boot id + uptime and filed under `nodate/`. When the clock arrives, the
+  sequence + boot id and filed under `nodate/`. When the clock arrives, the
   store rotates to dated segments by itself.
 - **Retention by bytes and/or file count**, oldest first (`nodate` first),
   affordable because sizes live in the index.

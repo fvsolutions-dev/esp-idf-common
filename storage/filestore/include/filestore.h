@@ -18,13 +18,17 @@ extern "C" {
  *
  * ON-DISK LAYOUT
  *
- *   <base>/wip/<prefix>-<seq>_<YYYY-MM-DD>_<HH-MM-SS>Z.<ext>   <- being written
+ *   <base>/wip/<prefix>-<seq>_<YYYY-MM-DD>_<HH-MM-SS>.<ext>    <- being written
  *   <base>/<YYYY-MM-DD>/<same basename>                        <- closed
  *   <base>/<YYYY-MM-DD>/.index                                 <- one line per closed file
  *   <base>/nodate/...                                          <- closed before the clock was valid
  *
- * e.g. wip/data-000424_2026-07-31_09-15-00Z.csv moving, on close, to
- *      2026-07-31/data-000424_2026-07-31_09-15-00Z.csv
+ * e.g. wip/data-000424_2026-07-31_09-15-00.csv moving, on close, to
+ *      2026-07-31/data-000424_2026-07-31_09-15-00.csv
+ *
+ * Names and day folders use device-LOCAL time (set TZ before opening a
+ * store; unset TZ degrades to UTC). A trailing 'Z' marks legacy UTC names —
+ * recovery parses both. Epochs in the index and the entry struct stay UTC.
  *
  * The basename never changes: closing a segment is ONE atomic rename out of
  * wip/ into its day folder. "Finished" is expressed by location, so crash
@@ -44,7 +48,7 @@ extern "C" {
  *
  * CLOCK. Segment names and day folders need a real wall clock. While the
  * clock is invalid (epoch < min_valid_epoch), segments are still written —
- * named by boot id + uptime — and close into nodate/ instead of a day
+ * named by sequence + boot id — and close into nodate/ instead of a day
  * folder. Nothing is ever dropped for lack of a date. When the clock becomes
  * valid, the open nodate segment is closed and the next one is dated.
  *

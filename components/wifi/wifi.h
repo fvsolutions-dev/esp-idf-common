@@ -36,6 +36,10 @@ esp_err_t wifi_init(const wifi_module_config_t *cfg);
 void wifi_set_credentials_provider(wifi_credentials_provider_fn fn, void *ctx);
 esp_err_t wifi_stop(void);
 
+/* Undo wifi_stop(): restart the driver and respawn the management task so
+   scanning/connecting resumes. No-op when not stopped. */
+esp_err_t wifi_resume(void);
+
 esp_err_t wifi_request_reconnect(void);
 bool wifi_is_connected(void);
 

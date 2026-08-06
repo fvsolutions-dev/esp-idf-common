@@ -3,14 +3,37 @@
 #include <string.h>
 
 #include "esp_err.h"
+#include "esp_event.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_mac.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "wifi_scan.h"
 
 static const char *TAG = "WIFI_SCAN";
+
+/* Outer bound on one full scan. Generous on purpose: with BLE advertising
+   sharing the single 2.4 GHz radio, coexistence drip-feeds the scan RF slots
+   and a 13-channel sweep can stretch far past its nominal duration. */
+#define SCAN_PATIENT_TIMEOUT_MS 30000
+
+/* Persistent — registered once, never unregistered: per-call
+   register/unregister raced overlapping scan attempts ("handler already
+   registered, overwriting"). */
+static SemaphoreHandle_t s_scan_done;
+
+static void scan_done_handler(void *arg, esp_event_base_t base, int32_t id,
+                              void *data)
+{
+    (void)arg;
+    (void)base;
+    (void)id;
+    (void)data;
+    xSemaphoreGive(s_scan_done);
+}
 
 esp_err_t wifi_scan_candidates(const wifi_connection_info_t *connection_details,
                                int connection_details_count,
@@ -19,17 +42,41 @@ esp_err_t wifi_scan_candidates(const wifi_connection_info_t *connection_details,
 {
     esp_err_t ret;
     uint16_t ap_num = 0;
+    /* Default scan times on purpose: the driver REFUSES custom active dwell
+       when Bluetooth is enabled ("Should use default active scan time
+       parameter... when Bluetooth is enabled!!!!!!") — and with the patient
+       SCAN_DONE wait below, long dwells buy nothing anyway. */
     wifi_scan_config_t scan_config = {
         .ssid = NULL,
         .bssid = NULL,
         .channel = 0,
-        .scan_time.active.min = 250,
-        .scan_time.active.max = 800,
         .show_hidden = true,
     };
 
     ESP_LOGI(TAG, "Starting scan for wifi candidates");
-    ret = esp_wifi_scan_start(&scan_config, true);
+
+    /* Patient scan: non-blocking start + our own SCAN_DONE wait. The blocking
+       variant times its wait from a driver estimate; under BLE coexistence
+       the real scan runs longer, esp_wifi_scan_start() returned
+       ESP_ERR_WIFI_TIMEOUT — and the scan then completed anyway, results
+       discarded. Waiting on the event takes however long the radio needs. */
+    if (s_scan_done == NULL) {
+        s_scan_done = xSemaphoreCreateBinary();
+        if (s_scan_done == NULL) return ESP_ERR_NO_MEM;
+        ret = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE,
+                                         scan_done_handler, NULL);
+        if (ret != ESP_OK) return ret;
+    }
+    xSemaphoreTake(s_scan_done, 0);   /* drain a stale completion, if any */
+
+    ret = esp_wifi_scan_start(&scan_config, false);
+    if (ret == ESP_OK &&
+        xSemaphoreTake(s_scan_done, pdMS_TO_TICKS(SCAN_PATIENT_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "scan still not done after %d ms — aborting it",
+                 SCAN_PATIENT_TIMEOUT_MS);
+        esp_wifi_scan_stop();
+        ret = ESP_ERR_TIMEOUT;
+    }
     if (ret != ESP_OK) {
         ESP_LOGE("WIFI", "Failed to start scan: %s", esp_err_to_name(ret));
         return ret;

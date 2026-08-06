@@ -173,6 +173,25 @@ esp_err_t wifi_stop(void)
     return esp_wifi_stop();
 }
 
+esp_err_t wifi_resume(void)
+{
+    if (!s_stopped) return ESP_OK;   // never stopped — nothing to do
+    esp_err_t err = esp_wifi_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "wifi resume: esp_wifi_start failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    s_stopped = false;   // after the start, so a racing handler can't reconnect early
+    /* The management task deleted itself when it saw s_stopped — respawn it
+       so scan/connect/reconnect care resumes. */
+    if (xTaskCreate(wifi_management_task, "wifi_startup_task", 4096, NULL, 5, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "wifi resume: management task spawn failed");
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGI(TAG, "Wi-Fi resumed");
+    return ESP_OK;
+}
+
 esp_err_t wifi_request_reconnect(void)
 {
     return wifi_connect();
@@ -200,6 +219,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         case WIFI_EVENT_STA_DISCONNECTED: {
             wifi_event_sta_disconnected_t *event =
                 (wifi_event_sta_disconnected_t *)event_data;
+
+            /* A deliberate wifi_stop() (e.g. time_sync done) also lands here
+               (reason ASSOC_LEAVE — we left). Don't warn about it, and above
+               all don't try to reconnect and then report the refusal as
+               "all candidates exhausted". */
+            if (s_stopped) {
+                ESP_LOGI(TAG, "Disconnected (deliberate stop)");
+                break;
+            }
 
             ESP_LOGW(TAG, "Disconnected from AP. Reason: %s (%d)",
                      get_disconnect_reason_string(event->reason), event->reason);
